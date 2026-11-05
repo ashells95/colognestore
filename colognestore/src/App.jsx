@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { siteConfig } from './config/site.js'
 import { getApiHealth, getProducts } from './services/api.js'
+import {
+  addCartItem,
+  createCartItem,
+  getCartCount,
+  getCartSubtotal,
+  readCart,
+  removeCartItem,
+  setCartQuantity,
+  writeCart,
+} from './services/cart.js'
 import './App.css'
 
 const initialFilters = {
@@ -23,11 +33,21 @@ function formatPrice(priceCents) {
   return currency.format(priceCents / 100)
 }
 
-function ProductCard({ product }) {
+function ProductCard({ product, cartItems, onAdd }) {
+  const [selectedSku, setSelectedSku] = useState(
+    product.variants?.find((variant) => variant.stock > 0)?.sku
+      || product.variants?.[0]?.sku
+      || '',
+  )
   const image = product.images?.[0]
-  const availableVariants = product.variants?.filter((variant) => variant.stock > 0) ?? []
+  const variants = product.variants ?? []
+  const selectedVariant = variants.find((variant) => variant.sku === selectedSku) ?? variants[0]
+  const productId = String(product._id || product.slug)
+  const cartQuantity = cartItems.find(
+    (item) => item.productId === productId && item.sku === selectedVariant?.sku,
+  )?.quantity ?? 0
   const lowestPrice = product.minPriceCents
-    ?? Math.min(...(product.variants ?? []).map((variant) => variant.priceCents))
+    ?? Math.min(...variants.map((variant) => variant.priceCents))
 
   return (
     <article className="product-card">
@@ -54,19 +74,162 @@ function ProductCard({ product }) {
         <p className="product-family">{product.fragranceFamily}</p>
         <div className="product-meta">
           <span>
-            {product.variants?.length === 1
-              ? `${product.variants[0].sizeMl} ml`
-              : `${product.variants?.length ?? 0} sizes`}
+            {variants.length === 1 ? `${variants[0].sizeMl} ml` : `${variants.length} sizes`}
           </span>
           <span className="product-price">
             {Number.isFinite(lowestPrice) ? `From ${formatPrice(lowestPrice)}` : 'Price unavailable'}
           </span>
         </div>
-        <p className={`stock-note ${availableVariants.length ? '' : 'is-unavailable'}`}>
-          {availableVariants.length ? 'Available to discover' : 'Currently unavailable'}
-        </p>
+        {variants.length > 1 && (
+          <label className="variant-picker">
+            <span>Choose a size</span>
+            <select
+              aria-label={`Choose a size of ${product.name}`}
+              value={selectedVariant?.sku || ''}
+              onChange={(event) => setSelectedSku(event.target.value)}
+            >
+              {variants.map((variant) => (
+                <option key={variant.sku} value={variant.sku} disabled={variant.stock < 1}>
+                  {variant.sizeMl} ml · {variant.concentration}{variant.stock < 1 ? ' · Sold out' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {selectedVariant && (
+          <p className={`stock-note ${selectedVariant.stock > 0 ? '' : 'is-unavailable'}`}>
+            {selectedVariant.stock > 0
+              ? `${selectedVariant.stock} available`
+              : 'Currently unavailable'}
+          </p>
+        )}
+        <button
+          className="button button-outline add-to-cart"
+          type="button"
+          disabled={!selectedVariant || selectedVariant.stock < 1}
+          onClick={() => onAdd(product, selectedVariant)}
+        >
+          {cartQuantity ? `Add another · ${cartQuantity} in bag` : 'Add to bag'}
+          <span aria-hidden="true">+</span>
+        </button>
       </div>
     </article>
+  )
+}
+
+function CartDialog({
+  isOpen,
+  items,
+  itemCount,
+  subtotal,
+  storageError,
+  notice,
+  onClose,
+  onQuantityChange,
+  onRemove,
+}) {
+  const dialogRef = useRef(null)
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    if (isOpen && !dialog.open) dialog.showModal()
+    if (!isOpen && dialog.open) dialog.close()
+  }, [isOpen])
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="cart-dialog"
+      aria-labelledby="cart-title"
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) event.currentTarget.close()
+      }}
+    >
+      <div className="cart-panel">
+        <div className="cart-header">
+          <div>
+            <p className="eyebrow">A considered selection</p>
+            <h2 id="cart-title">Your bag <span>({itemCount})</span></h2>
+          </div>
+          <button className="cart-close" type="button" aria-label="Close shopping bag" onClick={onClose}>
+            ×
+          </button>
+        </div>
+
+        {storageError && <p className="cart-notice" role="status">{storageError}</p>}
+        {notice && <p className="cart-notice" role="status">{notice}</p>}
+
+        {items.length === 0 ? (
+          <div className="cart-empty">
+            <p>Your bag is taking a moment for itself.</p>
+            <button className="button button-dark" type="button" onClick={onClose}>
+              Continue exploring
+            </button>
+          </div>
+        ) : (
+          <>
+            <ul className="cart-items">
+              {items.map((item) => (
+                <li className="cart-item" key={item.key}>
+                  <div className="cart-item-image">
+                    {item.imageUrl
+                      ? <img src={item.imageUrl} alt={item.imageAlt} />
+                      : <span aria-hidden="true">{item.brand.slice(0, 1)}</span>}
+                  </div>
+                  <div className="cart-item-details">
+                    <p className="product-brand">{item.brand}</p>
+                    <h3>{item.name}</h3>
+                    <p>{item.sizeMl} ml · {item.concentration}</p>
+                    <div className="cart-item-actions">
+                      <div className="quantity-control" aria-label={`Quantity of ${item.name}`}>
+                        <button
+                          type="button"
+                          aria-label={`Decrease quantity of ${item.name}`}
+                          disabled={item.quantity <= 1}
+                          onClick={() => onQuantityChange(item, item.quantity - 1)}
+                        >
+                          −
+                        </button>
+                        <span aria-live="polite">{item.quantity}</span>
+                        <button
+                          type="button"
+                          aria-label={`Increase quantity of ${item.name}`}
+                          disabled={item.quantity >= item.stock}
+                          onClick={() => onQuantityChange(item, item.quantity + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        className="text-button remove-item"
+                        type="button"
+                        onClick={() => onRemove(item)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                  <p className="cart-item-price">{formatPrice(item.priceCents * item.quantity)}</p>
+                </li>
+              ))}
+            </ul>
+            <div className="cart-summary">
+              <div><span>Estimated subtotal</span><strong>{formatPrice(subtotal)}</strong></div>
+              <p>Shipping, tax, current pricing, and stock are confirmed at checkout.</p>
+              <button className="button button-dark checkout-placeholder" type="button" disabled>
+                Checkout coming next
+              </button>
+              <button className="text-button continue-shopping" type="button" onClick={onClose}>
+                Continue exploring
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </dialog>
   )
 }
 
@@ -82,6 +245,7 @@ function ProductSkeleton() {
 }
 
 function App() {
+  const [initialCart] = useState(readCart)
   const [health, setHealth] = useState({ status: 'loading' })
   const [draftFilters, setDraftFilters] = useState(initialFilters)
   const [filters, setFilters] = useState(initialFilters)
@@ -93,6 +257,10 @@ function App() {
     error: '',
   })
   const [reloadCount, setReloadCount] = useState(0)
+  const [cartItems, setCartItems] = useState(initialCart.items)
+  const [cartStorageError, setCartStorageError] = useState(initialCart.error)
+  const [cartOpen, setCartOpen] = useState(false)
+  const [cartNotice, setCartNotice] = useState('')
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ limit: '12', sort: filters.sort })
@@ -117,6 +285,8 @@ function App() {
   const products = catalog.key === requestKey ? catalog.products : []
   const pagination = catalog.key === requestKey ? catalog.pagination : { total: 0 }
   const catalogError = catalog.key === requestKey ? catalog.error : ''
+  const cartCount = getCartCount(cartItems)
+  const cartSubtotal = getCartSubtotal(cartItems)
 
   useEffect(() => {
     document.title = `${siteConfig.name} | ${siteConfig.tagline}`
@@ -167,6 +337,15 @@ function App() {
     return () => controller.abort()
   }, [queryString, requestKey])
 
+  function saveCart(items) {
+    try {
+      writeCart(items)
+      setCartStorageError('')
+    } catch {
+      setCartStorageError('Your cart could not be saved on this device. It may not be here after you leave.')
+    }
+  }
+
   function updateDraft(field, value) {
     setDraftFilters((current) => ({ ...current, [field]: value }))
   }
@@ -183,6 +362,38 @@ function App() {
     setReloadCount((count) => count + 1)
   }
 
+  function addToCart(product, variant) {
+    const item = createCartItem(product, variant)
+    if (!item) {
+      setCartNotice('This fragrance option is not currently available.')
+      setCartOpen(true)
+      return
+    }
+
+    const result = addCartItem(cartItems, item)
+    setCartItems(result.items)
+    saveCart(result.items)
+    setCartNotice(
+      result.added
+        ? `${item.sizeMl} ml ${item.name} added to your bag.`
+        : `${item.name} has reached the available stock quantity.`,
+    )
+    setCartOpen(true)
+  }
+
+  function changeCartQuantity(item, quantity) {
+    const updatedItems = setCartQuantity(cartItems, item.key, quantity)
+    setCartItems(updatedItems)
+    saveCart(updatedItems)
+  }
+
+  function removeFromCart(item) {
+    const updatedItems = removeCartItem(cartItems, item.key)
+    setCartItems(updatedItems)
+    saveCart(updatedItems)
+    setCartNotice(`${item.name} removed from your bag.`)
+  }
+
   const apiIsReady = health.status === 'ok'
 
   return (
@@ -196,7 +407,14 @@ function App() {
           <a className="active" href="#collection">Shop</a>
           <a href="#story">Our approach</a>
         </nav>
-        <a className="header-note" href="#collection">Considered fragrance</a>
+        <button
+          className="header-note bag-trigger"
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => { setCartNotice(''); setCartOpen(true) }}
+        >
+          Your bag <span>({cartCount})</span>
+        </button>
       </header>
 
       <main>
@@ -394,7 +612,12 @@ function App() {
           {catalogStatus === 'ready' && products.length > 0 && (
             <div className="product-grid" aria-live="polite">
               {products.map((product) => (
-                <ProductCard key={product._id || product.slug} product={product} />
+                <ProductCard
+                  key={product._id || product.slug}
+                  product={product}
+                  cartItems={cartItems}
+                  onAdd={addToCart}
+                />
               ))}
             </div>
           )}
@@ -416,6 +639,17 @@ function App() {
         <span>Fragrance, with intention.</span>
         <a href="#home">Back to top ↑</a>
       </footer>
+      <CartDialog
+        isOpen={cartOpen}
+        items={cartItems}
+        itemCount={cartCount}
+        subtotal={cartSubtotal}
+        storageError={cartStorageError}
+        notice={cartNotice}
+        onClose={() => setCartOpen(false)}
+        onQuantityChange={changeCartQuantity}
+        onRemove={removeFromCart}
+      />
     </div>
   )
 }

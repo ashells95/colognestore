@@ -1,6 +1,6 @@
 # Cologne Store — reusable MERN foundation
 
-A reusable starting point for a full-stack store: a React/Vite client, an Express/Node API, and MongoDB through Mongoose. Phase 1 established configuration and the client/server connection; Phase 2 adds product APIs and customer authentication. Checkout and other store workflows are staged for later phases. This starter is not yet a production e-commerce system.
+A reusable starting point for a full-stack store: a React/Vite client, an Express/Node API, and MongoDB through Mongoose. The project includes product APIs and customer authentication, a database-backed storefront catalog, and a browser-persisted shopping cart. Checkout and payment are staged for a later phase; this starter is not yet a production e-commerce system.
 
 ## Architecture
 
@@ -36,7 +36,8 @@ colognestore/
     │   │   └── site.js           # Reusable store name and brand settings
     │   ├── pages/               # Route-level screens (next phases)
     │   ├── services/
-    │   │   └── api.js           # Client-to-API requests
+    │   │   ├── api.js           # Client-to-API requests
+    │   │   └── cart.js          # Browser cart persistence and calculations
     │   ├── App.jsx
     │   └── main.jsx
     ├── package.json             # Client dependencies and scripts
@@ -114,6 +115,7 @@ npm run admin:promote -- customer@example.com
 npm --prefix .\colognestore run dev
 npm --prefix .\colognestore run lint
 npm --prefix .\colognestore run build
+npm --prefix .\colognestore test
 ```
 
 ## API foundation (Phase 2)
@@ -130,6 +132,8 @@ Before calling write endpoints, fetch `GET /api/auth/csrf`; send the returned va
 
 Product prices are stored as integer cents to avoid floating-point rounding; clients should format them for display. Product image URLs are validated, but upload/storage integration is not implemented yet.
 
+The storefront catalog reads active products from `GET /api/products` and sends search, brand, fragrance-family, collection, concentration, price-range, and sorting filters to the API. The cart is persisted in the browser's local storage and shows an estimated subtotal. Cart data and browser-displayed prices are not trusted for payment; checkout must re-read current product prices and inventory from MongoDB on the server. Frontend cart tests run with `npm --prefix .\colognestore test`.
+
 To reuse the starter for another storefront, change `VITE_STORE_NAME` and `VITE_STORE_TAGLINE` in the client environment. Keep application-specific settings in the client `config` and add domain behavior in server models/services rather than coupling it to UI components.
 
-Still out of scope for this phase: email verification/password reset, customer profile/address management, cart/wishlist, reviews, checkout/payments, inventory reservation/order workflows, a visual admin UI, production index migrations, and deployment. Do not declare the application production-ready or represent demo products as real inventory.
+Still out of scope for this phase: email verification/password reset, customer profile/address management, wishlist, reviews, order persistence, checkout/payments, inventory reservation/order workflows, a visual admin UI, production index migrations, and deployment. Do not declare the application production-ready or represent demo products as real inventory.
