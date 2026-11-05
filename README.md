@@ -112,6 +112,7 @@ npm run dev
 npm start
 npm test
 npm run admin:promote -- customer@example.com
+npm run seed:products
 npm --prefix .\colognestore run dev
 npm --prefix .\colognestore run lint
 npm --prefix .\colognestore run build
@@ -133,6 +134,16 @@ Before calling write endpoints, fetch `GET /api/auth/csrf`; send the returned va
 Product prices are stored as integer cents to avoid floating-point rounding; clients should format them for display. Product image URLs are validated, but upload/storage integration is not implemented yet.
 
 The storefront catalog reads active products from `GET /api/products` and sends search, brand, fragrance-family, collection, concentration, price-range, and sorting filters to the API. The cart is persisted in the browser's local storage and shows an estimated subtotal. Cart data and browser-displayed prices are not trusted for payment; checkout must re-read current product prices and inventory from MongoDB on the server. Frontend cart tests run with `npm --prefix .\colognestore test`.
+
+To preview the catalog before adding real inventory, seed three clearly labeled, fictional sample fragrances. This is an additive, idempotent operation: it skips matching slugs or variant SKUs and never updates existing products. Run it only against a development database, after reviewing `MONGO_URI`; the script refuses production mode and requires a one-command opt-in:
+
+```powershell
+$env:SEED_DEMO_DATA = 'true'
+npm run seed:products
+Remove-Item Env:SEED_DEMO_DATA
+```
+
+The sample records are marked `SAMPLE` in their names and descriptions and do not include product photography. They are demonstration data, not real products or saleable inventory. Remove them through the admin product archive workflow when they are no longer needed.
 
 To reuse the starter for another storefront, change `VITE_STORE_NAME` and `VITE_STORE_TAGLINE` in the client environment. Keep application-specific settings in the client `config` and add domain behavior in server models/services rather than coupling it to UI components.
 
