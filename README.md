@@ -113,6 +113,7 @@ npm start
 npm test
 npm run admin:promote -- customer@example.com
 npm run seed:products
+npm run seed:sample-images
 npm --prefix .\colognestore run dev
 npm --prefix .\colognestore run lint
 npm --prefix .\colognestore run build
@@ -143,7 +144,17 @@ npm run seed:products
 Remove-Item Env:SEED_DEMO_DATA
 ```
 
-The sample records are marked `SAMPLE` in their names and descriptions and do not include product photography. They are demonstration data, not real products or saleable inventory. Remove them through the admin product archive workflow when they are no longer needed.
+The sample records are marked `SAMPLE` in their names and descriptions. They are demonstration data, not real products or saleable inventory. Remove them through the admin product archive workflow when they are no longer needed.
+
+Generated sample product photos are stored as optimized WebP assets in `colognestore/public/images/products`. Attach them to the sample records with the same opt-in, after reviewing `MONGO_URI`:
+
+```powershell
+$env:SEED_DEMO_DATA = 'true'
+npm run seed:sample-images
+Remove-Item Env:SEED_DEMO_DATA
+```
+
+The image command only attaches a photo to a matching sample product with no existing images. Product image validation permits HTTPS URLs or safe `/images/products/...` paths served by the storefront.
 
 To reuse the starter for another storefront, change `VITE_STORE_NAME` and `VITE_STORE_TAGLINE` in the client environment. Keep application-specific settings in the client `config` and add domain behavior in server models/services rather than coupling it to UI components.
 

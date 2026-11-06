@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { registerSchema } = require('../validators/auth');
-const { productQuerySchema, productUpdateSchema } = require('../validators/products');
+const {
+  productQuerySchema,
+  productSchema,
+  productUpdateSchema,
+} = require('../validators/products');
 
 test('registration normalizes email and rejects caller-supplied roles', () => {
   const parsed = registerSchema.safeParse({
@@ -43,4 +47,53 @@ test('product updates must include at least one supported field', () => {
   assert.equal(parsed.success, true);
   assert.deepEqual(parsed.data, { active: false });
   assert.equal(productUpdateSchema.safeParse({ role: 'admin' }).success, false);
+});
+
+test('product images accept safe local storefront assets and HTTPS URLs only', () => {
+  const product = {
+    name: 'Evening Ember',
+    slug: 'evening-ember',
+    brand: 'Atelier North',
+    description: 'A warm, woody fragrance.',
+    gender: 'unisex',
+    fragranceFamily: 'Woody',
+    variants: [{
+      sku: 'EE-50-EDP',
+      sizeMl: 50,
+      concentration: 'EDP',
+      priceCents: 12500,
+      stock: 5,
+    }],
+  };
+
+  assert.equal(
+    productSchema.safeParse({
+      ...product,
+      images: [{ url: '/images/products/evening-ember.webp', altText: 'Amber bottle' }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    productSchema.safeParse({
+      ...product,
+      images: [{ url: 'https://images.example.com/ember.jpg', altText: 'Amber bottle' }],
+    }).success,
+    true,
+  );
+
+  for (const url of [
+    'http://images.example.com/ember.jpg',
+    '//images.example.com/ember.jpg',
+    '/images/products/../private.webp',
+    '/api/health',
+  ]) {
+    assert.equal(
+      productSchema.safeParse({
+        ...product,
+        images: [{ url, altText: 'Invalid image' }],
+      }).success,
+      false,
+      `Expected ${url} to be rejected`,
+    );
+  }
 });

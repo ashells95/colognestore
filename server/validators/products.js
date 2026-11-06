@@ -3,11 +3,19 @@ const { z } = require('zod');
 const noteSchema = z.array(z.string().trim().min(1).max(60)).max(20);
 const imageUrlSchema = z
   .string()
-  .url()
   .max(2048)
-  .refine((url) => new URL(url).protocol === 'https:', {
-    message: 'Image URLs must use HTTPS.',
-  });
+  .refine(
+    (url) => {
+      try {
+        return new URL(url).protocol === 'https:';
+      } catch {
+        return /^\/images\/products\/[a-z0-9][a-z0-9-]*\.(?:avif|webp|png|jpe?g)$/i.test(url);
+      }
+    },
+    {
+      message: 'Images must use HTTPS or a safe local product image path.',
+    },
+  );
 const variantSchema = z
   .object({
     sku: z.string().trim().min(1).max(64),
